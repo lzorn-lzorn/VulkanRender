@@ -1,0 +1,101 @@
+# CMake minimum version requirement
+cmake_minimum_required(VERSION 3.16)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+find_package(Vulkan REQUIRED)
+
+if(Vulkan_FOUND)
+	message(STATUS "Vulkan found: ${Vulkan_LIBRARIES}")
+else()
+	message(FATAL_ERROR "Vulkan not found")
+endif()
+
+file(GLOB_RECURSE VULKAN_RHI_SOURCES 
+    "Source/*.cpp" 
+    "Source/*.cc" 
+    "Source/*.cxx"
+    "Detail/*.cpp" 
+    "Detail/*.cc" 
+    "Detail/*.cxx"
+)
+
+# Collect header files from Detail directory (private headers)
+file(GLOB_RECURSE VULKAN_RHI_PRIVATE_HEADERS 
+    "Detail/*.h" 
+    "Detail/*.hpp"
+)
+
+# Collect public header files from Include directory
+file(GLOB_RECURSE VULKAN_RHI_PUBLIC_HEADERS 
+    "Include/*.h" 
+    "Include/*.hpp"
+)
+
+# Create the VulkanRHI library
+add_library(VulkanRHI STATIC ${VULKAN_RHI_SOURCES})
+
+# Set target properties
+set_target_properties(VulkanRHI PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 1
+    PUBLIC_HEADER "${VULKAN_RHI_PUBLIC_HEADERS}"
+)
+
+# Public include directories (visible to library consumers)
+target_include_directories(VulkanRHI PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Include>
+    $<INSTALL_INTERFACE:include>
+)
+
+# Private include directories (only visible internally)
+# Note: Detail and VulkanRHI root are added to allow proper header resolution
+target_include_directories(VulkanRHI PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Detail
+    ${CMAKE_CURRENT_SOURCE_DIR}/Source
+)
+
+# Add Vulkan include directories (for both compiler and IntelliSense)
+if(Vulkan_INCLUDE_DIRS)
+    target_include_directories(VulkanRHI PRIVATE ${Vulkan_INCLUDE_DIRS})
+endif()
+
+# Workaround for Vulkan SDK 1.4 + Clang: disable struct comparison operators
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_definitions(VulkanRHI PRIVATE VULKAN_HPP_NO_STRUCT_COMPARE VULKAN_HPP_NO_SPACESHIP_OPERATOR)
+endif()
+
+# Link Vulkan library privately (internal dependency)
+target_link_libraries(VulkanRHI PRIVATE ${Vulkan_LIBRARIES})
+
+# Compiler-specific options
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(VulkanRHI PRIVATE
+        -Wall -Wextra
+        # Workaround for Vulkan SDK 1.4 + Clang compatibility issue
+        # -Wno-ambiguous-reversed-operator
+    )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(VulkanRHI PRIVATE
+        -Wall -Wextra
+    )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(VulkanRHI PRIVATE
+        /W4
+    )
+endif()
+
+# Install rules (optional, for library distribution)
+install(TARGETS VulkanRHI
+    EXPORT VulkanRHITargets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+    PUBLIC_HEADER DESTINATION include/VulkanRHI
+)
+
+# Export the targets
+install(EXPORT VulkanRHITargets
+    FILE VulkanRHITargets.cmake
+    NAMESPACE VulkanRHI::
+    DESTINATION lib/cmake/VulkanRHI
+)

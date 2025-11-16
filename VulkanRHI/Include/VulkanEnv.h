@@ -3,10 +3,8 @@
 #include <stdexcept>
 #include <optional>
 #include <memory_resource>
-
-#include <vulkan/vulkan.hpp>
 #include "../Detail/VulkanTools.h"
-
+#include <vulkan/vulkan.hpp>
 
 // 平台相关的头文件
 // #ifdef _WIN32

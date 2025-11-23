@@ -4,6 +4,7 @@
 #include <optional>
 #include <memory_resource>
 #include "../Detail/VulkanTools.h"
+#include "vulkan/vulkan_handles.hpp"
 #include <vulkan/vulkan.hpp>
 
 // 平台相关的头文件
@@ -33,10 +34,15 @@ public:
     vk::Instance& VkInstance() { return vkInstance; }
     std::string Name() const { return "Vulkan"; }
     ~VulkanEnv();
+
+    vk::PhysicalDevice GetPhysicalDevice() {
+        
+    }
 private:
     VulkanEnv();
     vk::Instance CreateVulkanInstance();
 private:
     vk::Instance vkInstance;
+    std::unique_ptr<vk::PhysicalDevice> ptrCurPhysicalDevice;
 };
 

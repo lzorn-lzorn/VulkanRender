@@ -2,11 +2,10 @@
 #include "../Detail/VulkanSupport.h"
 
 
- VulkanDevice::VulkanDevice(VulkanEnv*env, vk::PhysicalDevice * physicalDevice)
-	: vkEnv(env) , ptrCurPhysicalDevice(physicalDevice) 
+ VulkanDevice::VulkanDevice(VulkanEnv* env, vk::SurfaceKHR surface)
+	: vk_env(env)
 {
 	auto vkPhysicalDevices = VulkanEnv::Instance().VkInstance().enumeratePhysicalDevices();
-	*ptrCurPhysicalDevice = GetBestPhysicalDevice(vkPhysicalDevices);
 	CreateDevice();
 };
 void VulkanDevice::CreateDevice() {
@@ -14,6 +13,5 @@ void VulkanDevice::CreateDevice() {
 }
 
 VulkanDevice::~VulkanDevice(){
-    device.destroy();
-    ptrCurPhysicalDevice = nullptr;
+    vk_device.destroy();
 }

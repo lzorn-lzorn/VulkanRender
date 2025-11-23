@@ -4,16 +4,16 @@
 class VulkanEnv;
 class VulkanDevice{
 public:
-    VulkanDevice(VulkanEnv*, vk::PhysicalDevice*);
+    VulkanDevice(VulkanEnv*, vk::SurfaceKHR);
     ~VulkanDevice();
 public:
     unsigned long long GetGPUNum() {
-        return vkEnv->VkInstance().enumeratePhysicalDevices().size();
+        return vk_env->VkInstance().enumeratePhysicalDevices().size();
     }
 private:
     void CreateDevice();
 private:
-	VulkanEnv * vkEnv;
-    vk::Device device;
-    vk::PhysicalDevice* ptrCurPhysicalDevice{nullptr};
+	VulkanEnv * vk_env;
+    vk::Device vk_device;
 };
+// 李卓然

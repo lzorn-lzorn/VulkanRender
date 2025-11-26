@@ -36,13 +36,13 @@ public:
     ~VulkanEnv();
 
     vk::PhysicalDevice GetPhysicalDevice() {
-        
+        return curPhysicalDevice;
     }
 private:
     VulkanEnv();
     vk::Instance CreateVulkanInstance();
 private:
     vk::Instance vkInstance;
-    std::unique_ptr<vk::PhysicalDevice> ptrCurPhysicalDevice;
+    vk::PhysicalDevice curPhysicalDevice;
 };
 

@@ -4,6 +4,12 @@
 // ! VulkanEnv =================================================================
 VulkanEnv::VulkanEnv() {
     vkInstance = CreateVulkanInstance();
+    // Pick the first physical device for now
+    auto devices = vkInstance.enumeratePhysicalDevices();
+    if (devices.empty()) {
+        throw std::runtime_error("Failed to find GPUs with Vulkan support!");
+    }
+    curPhysicalDevice = devices[0];
 }
 
 VulkanEnv::~VulkanEnv() {

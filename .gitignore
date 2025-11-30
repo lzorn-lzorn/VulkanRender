@@ -1,2 +1,5 @@
 build/
 .cache/
+config/
+array/
+stl_vector.h

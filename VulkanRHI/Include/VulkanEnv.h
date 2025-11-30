@@ -1,12 +1,10 @@
 #pragma once
-#include <cstdint>
-#include <stdexcept>
-#include <optional>
-#include <memory_resource>
+
 #include "../Detail/VulkanTools.h"
 #include "vulkan/vulkan_handles.hpp"
 #include <vulkan/vulkan.hpp>
 
+#include <cassert>
 // 平台相关的头文件
 // #ifdef _WIN32
 // #include <vulkan/vulkan_win32.h>
@@ -19,30 +17,40 @@
 class VulkanQueue;
 class VulkanDevice;
 class VulkanViewport;
-class VulkanEnv;
 
-
+static vk::PhysicalDevice SelectPhysicalDevice(const vk::Instance& instance);
 class VulkanEnv final {
 public:
-    static VulkanEnv& Instance() {
-        static VulkanEnv envInstance;
-        return envInstance;
+    static VulkanEnv& Get() {
+        assert(sVkEnv != nullptr && "VulkanEnv is not initialized, call VulkanEnv::Init() first.");
+        return *sVkEnv;
     }
-    static void Initialize();
-    static void Quit();
+
+    /**
+    * @brief 初始化 Vulkan 环境, 分配内存
+    * @note 如果是封装多个 RHI, 可以考虑不使用 static
+    */
+    static void Init();
+    
+    /**
+    * @brief 销毁 Vulkan 环境, 释放内存
+    */
+    static void Shutdown();
 
     vk::Instance& VkInstance() { return vkInstance; }
     std::string Name() const { return "Vulkan"; }
-    ~VulkanEnv();
 
-    vk::PhysicalDevice GetPhysicalDevice() {
-        return curPhysicalDevice;
-    }
-private:
     VulkanEnv();
-    vk::Instance CreateVulkanInstance();
+    ~VulkanEnv();
+    
 private:
+    
+    void CreateVulkanInstance();
+    void CreateVulkanDevice();
+private:
+    static VulkanEnv* sVkEnv;
     vk::Instance vkInstance;
-    vk::PhysicalDevice curPhysicalDevice;
+    VulkanDevice* vkDevice {nullptr};
 };
+
 

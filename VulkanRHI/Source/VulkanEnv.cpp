@@ -1,23 +1,26 @@
 #include "../Include/VulkanEnv.h"
-#include <atomic>
+#include "../Detail/VulkanDevice.h"
 
-// ! VulkanEnv =================================================================
+#include "vulkan/vulkan_handles.hpp"
+
+
+VulkanEnv* VulkanEnv::sVkEnv = nullptr;
+
 VulkanEnv::VulkanEnv() {
-    vkInstance = CreateVulkanInstance();
-    // Pick the first physical device for now
-    auto devices = vkInstance.enumeratePhysicalDevices();
-    if (devices.empty()) {
-        throw std::runtime_error("Failed to find GPUs with Vulkan support!");
-    }
-    curPhysicalDevice = devices[0];
+    CreateVulkanInstance();
+
+    CreateVulkanDevice();
+    
 }
 
 VulkanEnv::~VulkanEnv() {
     // Cleanup Vulkan instance here
+    delete vkDevice;
+    vkDevice = nullptr;
     vkInstance.destroy();
 }
 
-vk::Instance VulkanEnv::CreateVulkanInstance(){
+void VulkanEnv::CreateVulkanInstance(){
     // 设置应用程序信息
     vk::ApplicationInfo vkAppInfo{};
     vkAppInfo.pApplicationName = "Vulkan Application";
@@ -69,15 +72,25 @@ vk::Instance VulkanEnv::CreateVulkanInstance(){
     
     // 创建Vulkan实例
     try {
-        vk::Instance instance = vk::createInstance(vkCreateInfo);
-        return instance;
+        this->vkInstance = vk::createInstance(vkCreateInfo);
     } catch (const vk::SystemError& err) {
         throw std::runtime_error(
             std::string("Failed to create Vulkan instance: ") + err.what()
         );
     }
 }
-void VulkanEnv::Initialize(){
+
+void VulkanEnv::CreateVulkanDevice(){
+    vk::PhysicalDevice vkPhysicalDevice = SelectPhysicalDevice(this->vkInstance);
+    vkDevice = new VulkanDevice(this, vkPhysicalDevice);
 }
-void VulkanEnv::Quit(){
+
+
+// todo:
+static vk::PhysicalDevice SelectPhysicalDevice(const vk::Instance& instance){
+    auto devices = instance.enumeratePhysicalDevices();
+    if (devices.empty()) {
+        throw std::runtime_error("Failed to find GPUs with Vulkan support!"); 
+    }
+    return devices[0];
 }

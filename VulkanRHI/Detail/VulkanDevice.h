@@ -1,16 +1,16 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
-#include "../Include/VulkanEnv.h"
 #include "vulkan/vulkan_handles.hpp"
+#include <vector>
+
 class VulkanEnv;
+
 class VulkanDevice{
 public:
-    VulkanDevice(VulkanEnv, vk::SurfaceKHR);
+    VulkanDevice(VulkanEnv*, vk::PhysicalDevice);
     ~VulkanDevice();
 public:
-    unsigned long long GetGPUNum() {
-        return mVkEnv.VkInstance().enumeratePhysicalDevices().size();
-    }
+
 
     vk::PhysicalDevice GetPhysicalDevice() const {
         return mVkPhysicalDevice;
@@ -24,5 +24,6 @@ private:
 	VulkanEnv& mVkEnv;
     vk::Device mVkDevice;
     vk::PhysicalDevice mVkPhysicalDevice;
+    vk::PhysicalDeviceProperties mVkPhysicalDeviceProperties;
+    std::vector <const char*> mDeviceExtensions;
 };
-// 李卓然

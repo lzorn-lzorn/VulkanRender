@@ -121,9 +121,46 @@ public:
 template <typename Alloc>
 using AllocPointer = typename std::allocator_traits<Alloc>::pointer;
 
+template <typename Ptr>
+constexpr auto Unfancy(Ptr ptr) noexcept -> decltype(std::addressof(*ptr)){
+	return std::addressof(*ptr);
+}
+
+template <typename Ty>
+constexpr Ty* Unfancy(Ty* ptr) noexcept {
+	return ptr;
+}
+
+template <typename Alloc, typename = void>
+struct HasMemberDestroy : std::false_type{};
+
+template <typename Alloc>
+struct HasMemberDestroy <
+	Alloc,
+	std::void_t<
+	/* std::declval<Alloc&>() 产生一个 Alloc 的左值引用类型, 能检测到对左值限定（&）的成员函数 */
+	/* std::declval<Alloc>() 产生一个 Alloc 的右值引用类型 */
+	/* 但是allocator_traits::destroy 在真实调用时接受 Alloc& */
+	/* 检测 Alloc 是否有自定义的 destroy(pointer) */
+		decltype(std::declval<Alloc&>().destroy(
+			std::declval<typename std::allocator_traits<Alloc>::pointer>()
+		))
+	>
+> : std::true_type{};
+
+
+template <typename Alloc>
+constexpr bool UsesDefaultDeatroy = (!HasMemberDestroy<Alloc>::value) ||
+	std::is_same_v<Alloc, std::allocator<typename Alloc::value_type>>
+
 template <typename Alloc>
 constexpr void DestroyRange(AllocPointer<Alloc> first, AllocPointer<Alloc> last, Alloc& allocator) noexcept {
-
+	using value_type = typename Alloc::value_type
+	if constexpr (!(std::is_trivially_destructible<value_type> && UsesDefaultDestroyVal<Alloc>)){
+		for (; first != last; ++first){
+			std::allocator_traits<Alloc>::destroy(allocator, std::addressof(*first));
+		}
+	}
 }
 };
 
@@ -191,11 +228,9 @@ struct ArrayConstIterator {};
 template <typename Array>
 struct ArrayIterator : public ArrayConstIterator<Array>{};
 
-/**
- * @brief Array 的基础结构, 用于实现所有的内部操作, 为 Array 提供各种支持 
- */
-template <typename ElementType, typename AllocatorType>
-struct ArrayBase{
+
+template <typename ElementType, class AllocatorType=std::allocator<ElementType>>
+class Array {
 private:
 	using M_AllocatorType = 
 		typename std::allocator_traits<typename DerivedClass::allocator_type>>
@@ -231,148 +266,6 @@ public:
 	using const_iterator         = ArrayConstIterator<Array>;
 	using reverse_iterator       = std::reverse_iterator<iterator>;
 	using reverse_const_iterator = std::reverse_iterator<const_iterator>;
-	
-protected:
-	template <typename ... ConstructParams>
-	constexpr void M_Construct(const size_type count, ConstructParams&& ... args){
-
-	}
-
-	constexpr void M_AllocateUninitializedMemory(size_type capacity){
-		auto& M_Data            = this->m_Data.data;
-		pointer& start          = M_Data.M_start;
-		pointer& finish         = M_Data.M_finish;
-		pointer& end_of_storage = M_Data.M_End_Of_Storage;
-
-		const pointer mem = M_GetAllocator().allocate(capacity);
-		start           = mem;
-		finish          = mem;
-		end_of_storage  = mem + capacity;
-	}
-
-	constexpr void M_AllocateNonZeroUninitializedMemory(const size_type capacity) {
-		auto& M_Data            = this->m_Data.data;
-		pointer& start          = M_Data.M_start;
-		pointer& finish         = M_Data.M_finish;
-		pointer& end_of_storage = M_Data.M_End_Of_Storage;
-
-		assert(capacity != 0 && "M_AllocateNonZeroUninitializedMemory Runtieme Error: capacity can not be zero.");
-		assert(start != nullptr && finish != nullptr && end_of_storage != nullptr && "M_AllocateNonZeroUninitializedMemory Runtieme Error: memory has been allocated.");
-
-		M_AllocateUninitializedMemory(capacity);
-	}
-
-	/**
-	* @brief 重新定位数组内存, 并更新内部指针
-	* @param newmem 新的内存地址
-	* @param newsize 新的已构造元素数量
-	* @param capacity 新的容量
-	*/
-	constexpr void M_RelocateArray(const pointer newmem, const size_type newsize, const size_type capacity) noexcept {
-		auto& allocator = M_GetAllocator();
-		auto& M_Data            = this->m_Data.data;
-		pointer& start          = M_Data.M_start;
-		pointer& finish         = M_Data.M_finish;
-		pointer& end_of_storage = M_Data.M_End_Of_Storage;
-
-		const size_type old_size = start ? static_cast<size_type>(finish - start) : 0u;
-		const size_type old_capacity = start ? static_cast<size_type>(end_of_storage - start) : 0u;
-
-		/* 检查新内存是否与就旧地址重合 */ 
-		if (newmem == start) {
-			finish = start + newsize;
-			end_of_storage = start + capacity;
-			return;
-		}
-
-		/* 检查 capacity 是否为0, 为0则释放内存 */
-		if (capacity == 0) {
-			if (start){
-				for (pointer p=start; p != finish; ++p){
-					M_AllocatorType::destroy(allocator, std::addressof(*p));
-				}
-				M_AllocatorType::deallocate(allocator, start, old_capacity);
-				start = nullptr;
-				finish = nullptr;
-				end_of_storage = nullptr;
-			}
-			return;
-		}
-
-		pointer newstart = newmem;
-		pointer newfinish = newmem;
-
-		/* 元素迁移 */
-		const size_type to_move = (old_size < newsize) ? old_size : newsize;
-		size_type constructed = 0u;
-		try {
-			for (; constructed < to_move; ++constructed){
-				pointer src = start + constructed;
-				if constexpr (std::is_nothrow_move_constructible_v<value_type> 
-						|| !std::is_copy_constructible_v<value_type>){	
-					M_AllocatorType::construct(allocator, newstart + constructed, std::move(*src));		
-				} else {
-					M_AllocatorType::construct(allocator, newstart + constructed, *src);
-				}
-				++newfinish;
-			}
-			for (; constructed < newsize; ++constructed, ++newfinish){
-				M_AllocatorType::construct(allocator, newstart + constructed);
-			}
-		} catch(...){
-			for (size_type i=0; i < constructed; ++i){
-				M_AllocatorType::destroy(allocator, std::addressof(*(newstart + i)));
-			}
-			M_AllocatorType::deallocate(allocator, newstart, capacity);
-		}
-
-		/* 销毁旧的内存地址中的元素 */
-		if (start) {
-			for (pointer p=start; p != finish; ++p){
-				M_AllocatorType::destroy(allocator, std::addressof(*p));
-			}
-			M_AllocatorType::deallocate(allocator, start, old_capacity);
-		}
-
-		start = newmem;
-		finish = newmem + newsize;
-		end_of_storage = newmem + capacity;
-	}
-	/**
-	* @brief 清除所有已构造的元素, 释放内存
-	*/
-	constexpr void M_Clear() noexcept {
-
-	}
-
-	[[nodiscard]] constexpr const M_AllocatorType& GetAllocator() const noexcept {
-		return m_Data.GetFirst();
-	}
-	[[nodiscard]] constexpr M_AllocatorType& GetAllocator() noexcept {
-		return m_Data.GetFirst();
-	}
-
-protected:
-	M_RealValueType m_Data;
-};
-
-template <typename ElementType, class AllocatorType=std::allocator<ElementType>>
-class Array : protected ArrayBase<ElementType, AllocatorType>{
-private:
-	using Base = ArrayBase<ElementType, AllocatorType>;
-public:
-	using value_type             = Base::value_type;
-	using allocator_type         = Base::allocator_type;
-	using size_type              = Base::size_type;
-	using difference_type        = Base::difference_type;
-	using pointer                = Base::pointer;
-	using const_pointer          = Base::const_pointer;
-	using reference              = Base::reference;
-	using const_reference        = Base::const_reference;
-	using iterator               = Base::iterator;
-	using const_iterator         = Base::const_iterator;
-	using reverse_iterator       = Base::reverse_iterator;
-	using reverse_const_iterator = Base::reverse_const_iterator;
 
 public:
 	constexpr Array() noexcept () {}
@@ -510,6 +403,160 @@ public:
 	[[nodiscard]] constexpr reverse_iterator rend() noexcept {}
 	[[nodiscard]] constexpr reverse_const_iterator rend() const noexcept {}
 	[[nodiscard]] constexpr reverse_const_iterator crend() const noexcept {}
+
+private:
+	template <typename ... ConstructParams>
+	constexpr void M_Construct(const size_type count, ConstructParams&& ... args){
+
+	}
+
+	constexpr size_type M_CalculateGrowth(const size_type newsize) const {
+
+	}
+	[[nodiscard]] constexpr size_type M_Capacity() const noexcept {
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+
+		return start ? static_cast<size_type>(end_of_storage - start) : 0u;
+	}
+
+	[[nodiscard]] constexpr size_type M_Size() const noexcept {
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+
+		return start ? static_cast<size_type>(finish - start) : 0u;
+	}
+
+	[[nodiscard]] constexpr bool M_IsEmpty() const noexcept {
+		return M_Size() == 0;
+	}
+
+	/**
+	* @brief 分配未初始化内存, 不会调用构造函数, 也不会进行任何安全检测
+	* @param capacity 分配的容量
+	*/ 
+	constexpr void M_AllocateUninitializedMemory(size_type capacity){
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+
+		const pointer mem = M_GetAllocator().allocate(capacity);
+		start           = mem;
+		finish          = mem;
+		end_of_storage  = mem + capacity;
+	}
+
+	/**
+	* @brief 分配未初始化内存, 不会调用构造函数, 但但是会进行安全检测
+	* @param capacity 分配的容量
+	*/
+	constexpr void M_AllocateNonZeroUninitializedMemory(const size_type capacity) {
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+
+		assert(capacity != 0 && "M_AllocateNonZeroUninitializedMemory Runtieme Error: capacity can not be zero.");
+		assert(start != nullptr && finish != nullptr && end_of_storage != nullptr && "M_AllocateNonZeroUninitializedMemory Runtieme Error: memory has been allocated.");
+
+		M_AllocateUninitializedMemory(capacity);
+	}
+
+	/**
+	* @brief 重新定位数组内存, 并更新内部指针
+	* @param newmem 新的内存地址
+	* @param newsize 新的已构造元素数量
+	* @param capacity 新的容量
+	*/
+	constexpr void M_RelocateArray(const pointer newmem, const size_type newsize, const size_type capacity) noexcept {
+		auto& allocator = M_GetAllocator();
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+
+		const size_type old_size = start ? static_cast<size_type>(finish - start) : 0u;
+		const size_type old_capacity = start ? static_cast<size_type>(end_of_storage - start) : 0u;
+
+		/* 检查新内存是否与就旧地址重合 */ 
+		if (newmem == start) {
+			finish = start + newsize;
+			end_of_storage = start + capacity;
+			return;
+		}
+
+		/* 检查 capacity 是否为0, 为0则释放内存 */
+		if (capacity == 0) {
+			if (start){
+				TypeTools::MemoryTools::DestroyRange<M_AllocatorType>(start, finish, allocator);
+				M_AllocatorType::deallocate(allocator, start, old_capacity);
+				start = nullptr;
+				finish = nullptr;
+				end_of_storage = nullptr;
+			}
+			return;
+		}
+
+		pointer newstart = newmem;
+		pointer newfinish = newmem;
+
+		/* 元素迁移 */
+		const size_type to_move = (old_size < newsize) ? old_size : newsize;
+		size_type constructed = 0u;
+		try {
+			for (; constructed < to_move; ++constructed){
+				pointer src = start + constructed;
+				if constexpr (std::is_nothrow_move_constructible_v<value_type> 
+						|| !std::is_copy_constructible_v<value_type>){	
+					M_AllocatorType::construct(allocator, newstart + constructed, std::move(*src));		
+				} else {
+					M_AllocatorType::construct(allocator, newstart + constructed, *src);
+				}
+				++newfinish;
+			}
+			for (; constructed < newsize; ++constructed, ++newfinish){
+				M_AllocatorType::construct(allocator, newstart + constructed);
+			}
+		} catch(...){
+			TypeTools::MemoryTools::DestroyRange<M_AllocatorType>(newstart, newstart + constructed, allocator);
+			M_AllocatorType::deallocate(allocator, newstart, capacity);
+		}
+
+		/* 销毁旧的内存地址中的元素 */
+		if (start) {
+			TypeTools::MemoryTools::DestroyRange<M_AllocatorType>(start, finish, allocator);
+			M_AllocatorType::deallocate(allocator, start, old_capacity);
+		}
+
+		start = newmem;
+		finish = newmem + newsize;
+		end_of_storage = newmem + capacity;
+	}
+	/**
+	* @brief 清除所有已从start开始, 往后count个元素, 释放调用析构函数
+	*/
+	constexpr void M_DestroyRange(pointer start, const size_type count) noexcept {
+		auto& allocator = M_GetAllocator();
+		auto& M_Data            = this->m_Data.data;
+		pointer& start          = M_Data.M_start;
+		pointer& finish         = M_Data.M_finish;
+		pointer& end_of_storage = M_Data.M_End_Of_Storage;
+	}
+
+	[[nodiscard]] constexpr const M_AllocatorType& GetAllocator() const noexcept {
+		return m_Data.GetFirst();
+	}
+	[[nodiscard]] constexpr M_AllocatorType& GetAllocator() noexcept {
+		return m_Data.GetFirst();
+	}
+
+private:
+	M_RealValueType m_Data;
 };
 }
 
